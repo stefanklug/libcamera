@@ -76,6 +76,41 @@ bool Request::Private::hasPendingBuffers() const
 }
 
 /**
+ * \brief Add a FrameBuffer with its associated Stream to the Request
+ * \param[in] stream The stream the buffer belongs to
+ * \param[in] buffer The FrameBuffer to add to the request
+ * \param[in] fence The optional fence
+ *
+ * \todo write docs
+ *
+ * \return 0 on success or a negative error code otherwise
+ * \retval -EEXIST The request already contains a buffer for the stream
+ *  or the buffer still references a fence
+ * \retval -EINVAL The buffer does not reference a valid Stream
+ */
+int Request::Private::setBuffer(const Stream *stream, FrameBuffer *buffer)
+{
+	Request *request = _o<Request>();
+
+	if (!stream) {
+		LOG(Request, Error) << "Invalid stream reference";
+		return -EINVAL;
+	}
+
+	auto it = request->bufferMap_.find(stream);
+	if (it != request->bufferMap_.end()) {
+		LOG(Request, Error) << "FrameBuffer already set for stream";
+		return -EEXIST;
+	}
+
+	buffer->_d()->setRequest(request);
+	pending_.insert(buffer);
+	request->bufferMap_[stream] = buffer;
+
+	return 0;
+}
+
+/**
  * \brief Complete a buffer for the request
  * \param[in] buffer The buffer that has completed
  *
@@ -215,6 +250,8 @@ void Request::Private::emitPrepareCompleted()
  */
 void Request::Private::prepare(std::chrono::milliseconds timeout)
 {
+	/* \todo reimplement fence handling */
+	return;
 	/* Create and connect one notifier for each synchronization fence. */
 	for (FrameBuffer *buffer : pending_) {
 		const Fence *fence = buffer->_d()->fence();
@@ -355,6 +392,7 @@ Request::Request(Camera *camera, uint64_t cookie)
 	 * \todo Add a validator for metadata controls.
 	 */
 	metadata_ = new ControlList(controls::controls);
+	activeStreams_ = camera->_d()->activeStreams();
 
 	LIBCAMERA_TRACEPOINT(request_construct, this);
 
@@ -383,17 +421,15 @@ void Request::reuse(ReuseFlag flags)
 {
 	LIBCAMERA_TRACEPOINT(request_reuse, this);
 
+	ASSERT(!_d()->hasPendingBuffers());
+
+	if (flags & ReuseFlag::ReuseBuffers)
+		LOG(Request, Warning) << "Reuse was called with deprecated reuse flag."
+				      << " Buffers need to be queued seperately.";
+
 	_d()->reset();
 
-	if (flags & ReuseBuffers) {
-		for (auto pair : bufferMap_) {
-			FrameBuffer *buffer = pair.second;
-			buffer->_d()->setRequest(this);
-			_d()->pending_.insert(buffer);
-		}
-	} else {
-		bufferMap_.clear();
-	}
+	bufferMap_.clear();
 
 	status_ = RequestPending;
 
@@ -427,70 +463,6 @@ void Request::reuse(ReuseFlag flags)
  * \return The map of Stream to FrameBuffer
  */
 
-/**
- * \brief Add a FrameBuffer with its associated Stream to the Request
- * \param[in] stream The stream the buffer belongs to
- * \param[in] buffer The FrameBuffer to add to the request
- * \param[in] fence The optional fence
- *
- * A reference to the buffer is stored in the request. The caller is responsible
- * for ensuring that the buffer will remain valid until the request complete
- * callback is called.
- *
- * A request can only contain one buffer per stream. If a buffer has already
- * been added to the request for the same stream, this function returns -EEXIST.
- *
- * A Fence can be optionally associated with the \a buffer.
- *
- * When a valid Fence is provided to this function, \a fence is moved to \a
- * buffer and this Request will only be queued to the device once the
- * fences of all its buffers have been correctly signalled.
- *
- * If the \a fence associated with \a buffer isn't signalled, the request will
- * fail after a timeout. The buffer will still contain the fence, which
- * applications must retrieve with FrameBuffer::releaseFence() before the buffer
- * can be reused in another request. Attempting to add a buffer that still
- * contains a fence to a request will result in this function returning -EEXIST.
- *
- * \sa FrameBuffer::releaseFence()
- *
- * \return 0 on success or a negative error code otherwise
- * \retval -EEXIST The request already contains a buffer for the stream
- *  or the buffer still references a fence
- * \retval -EINVAL The buffer does not reference a valid Stream
- */
-int Request::addBuffer(const Stream *stream, FrameBuffer *buffer,
-		       std::unique_ptr<Fence> fence)
-{
-	if (!stream) {
-		LOG(Request, Error) << "Invalid stream reference";
-		return -EINVAL;
-	}
-
-	auto it = bufferMap_.find(stream);
-	if (it != bufferMap_.end()) {
-		LOG(Request, Error) << "FrameBuffer already set for stream";
-		return -EEXIST;
-	}
-
-	buffer->_d()->setRequest(this);
-	_d()->pending_.insert(buffer);
-	bufferMap_[stream] = buffer;
-
-	/*
-	 * Make sure the fence has been extracted from the buffer
-	 * to avoid waiting on a stale fence.
-	 */
-	if (buffer->_d()->fence()) {
-		LOG(Request, Error) << "Can't add buffer that still references a fence";
-		return -EEXIST;
-	}
-
-	if (fence && fence->isValid())
-		buffer->_d()->setFence(std::move(fence));
-
-	return 0;
-}
 
 /**
  * \var Request::bufferMap_
@@ -514,6 +486,21 @@ FrameBuffer *Request::findBuffer(const Stream *stream) const
 		return nullptr;
 
 	return it->second;
+}
+
+int Request::enableStream(const Stream *stream, bool enabled)
+{
+	if (enabled) {
+		if (!_d()->camera_->_d()->activeStreams().count(stream)) {
+			LOG(Request, Error) << "Stream is not enabled in camera";
+			return -EEXIST;
+		}
+
+		activeStreams_.insert(stream);
+	} else
+		activeStreams_.erase(stream);
+
+	return 0;
 }
 
 /**

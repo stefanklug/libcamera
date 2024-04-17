@@ -61,7 +61,7 @@ protected:
 		FrameBuffer *buffer = buffers.begin()->second;
 
 		request->reuse();
-		request->addBuffer(stream, buffer);
+		camera_->queueBuffer(stream, buffer);
 		camera_->queueRequest(request);
 	}
 
@@ -107,7 +107,7 @@ protected:
 				return TestFail;
 			}
 
-			if (request->addBuffer(stream, buffer.get())) {
+			if (camera_->queueBuffer(stream, buffer.get())) {
 				std::cout << "Failed to associating buffer with request" << std::endl;
 				return TestFail;
 			}

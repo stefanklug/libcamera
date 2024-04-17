@@ -85,6 +85,7 @@ public:
 	void stopDevice(Camera *camera) override;
 
 	int queueRequestDevice(Camera *camera, Request *request) override;
+	int queueBuffersDevice(Camera *camera, Request *request) override;
 
 	bool match(DeviceEnumerator *enumerator) override;
 
@@ -365,6 +366,16 @@ int PipelineHandlerUVC::processControls(UVCCameraData *data, Request *request)
 int PipelineHandlerUVC::queueRequestDevice(Camera *camera, Request *request)
 {
 	UVCCameraData *data = cameraData(camera);
+	int ret = processControls(data, request);
+	if (ret < 0)
+		return ret;
+
+	return 0;
+}
+
+int PipelineHandlerUVC::queueBuffersDevice(Camera *camera, Request *request)
+{
+	UVCCameraData *data = cameraData(camera);
 	FrameBuffer *buffer = request->findBuffer(&data->stream_);
 	if (!buffer) {
 		LOG(UVC, Error)
@@ -373,11 +384,7 @@ int PipelineHandlerUVC::queueRequestDevice(Camera *camera, Request *request)
 		return -ENOENT;
 	}
 
-	int ret = processControls(data, request);
-	if (ret < 0)
-		return ret;
-
-	ret = data->video_->queueBuffer(buffer);
+	int ret = data->video_->queueBuffer(buffer);
 	if (ret < 0)
 		return ret;
 

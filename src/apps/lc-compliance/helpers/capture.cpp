@@ -100,7 +100,7 @@ void CaptureBalanced::capture(unsigned int numRequests)
 		std::unique_ptr<Request> request = camera_->createRequest();
 		ASSERT_TRUE(request) << "Can't create request";
 
-		ASSERT_EQ(request->addBuffer(stream, buffer.get()), 0) << "Can't set buffer for request";
+		ASSERT_EQ(camera_->queueBuffer(stream, buffer.get()), 0) << "Can't set buffer for request";
 
 		ASSERT_EQ(queueRequest(request.get()), 0) << "Failed to queue request";
 
@@ -136,7 +136,11 @@ void CaptureBalanced::requestComplete(Request *request)
 		return;
 	}
 
-	request->reuse(Request::ReuseBuffers);
+	for (auto &[stream, buffer] : request->buffers())
+		camera_->queueBuffer(stream, buffer);
+
+	request->reuse();
+
 	if (queueRequest(request))
 		loop_->exit(-EINVAL);
 }
@@ -163,7 +167,7 @@ void CaptureUnbalanced::capture(unsigned int numRequests)
 		std::unique_ptr<Request> request = camera_->createRequest();
 		ASSERT_TRUE(request) << "Can't create request";
 
-		ASSERT_EQ(request->addBuffer(stream, buffer.get()), 0) << "Can't set buffer for request";
+		ASSERT_EQ(camera_->queueBuffer(stream, buffer.get()), 0) << "Can't queue buffer";
 
 		ASSERT_EQ(camera_->queueRequest(request.get()), 0) << "Failed to queue request";
 
@@ -190,7 +194,10 @@ void CaptureUnbalanced::requestComplete(Request *request)
 	EXPECT_EQ(request->status(), Request::Status::RequestComplete)
 		<< "Request didn't complete successfully";
 
-	request->reuse(Request::ReuseBuffers);
+	for (auto &[stream, buffer] : request->buffers())
+		camera_->queueBuffer(stream, buffer);
+
+	request->reuse();
 	if (camera_->queueRequest(request))
 		loop_->exit(-EINVAL);
 }

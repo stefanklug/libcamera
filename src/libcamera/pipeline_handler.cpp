@@ -340,6 +340,9 @@ void PipelineHandler::stop(Camera *camera)
 		completeRequest(request);
 	}
 
+	/* drain buffer pool */
+	bufferPool_.clear();
+
 	/* Make sure no requests are pending. */
 	Camera::Private *data = camera->_d();
 	ASSERT(data->queuedRequests_.empty());
@@ -414,18 +417,6 @@ void PipelineHandler::queueRequest(Request *request)
 {
 	LIBCAMERA_TRACEPOINT(request_queue, request);
 
-	waitingRequests_.push(request);
-
-	request->_d()->prepare(300ms);
-}
-
-/**
- * \brief Queue one requests to the device
- */
-void PipelineHandler::doQueueRequest(Request *request)
-{
-	LIBCAMERA_TRACEPOINT(request_device_queue, request);
-
 	Camera *camera = request->_d()->camera();
 	Camera::Private *data = camera->_d();
 	data->queuedRequests_.push_back(request);
@@ -437,11 +428,38 @@ void PipelineHandler::doQueueRequest(Request *request)
 		return;
 	}
 
+	LIBCAMERA_TRACEPOINT(request_device_queue, request);
+
 	int ret = queueRequestDevice(camera, request);
 	if (ret) {
 		request->_d()->cancel();
 		completeRequest(request);
+		return;
 	}
+
+	waitingRequests_.push(request);
+
+	doQueueRequests();
+
+	//\todo reimplement fence handling
+	request->_d()->prepare(300ms);
+}
+
+int PipelineHandler::tryAttachBuffersToRequest(Request *request)
+{
+	//Check if we have buffers for every stream
+	for (const Stream *s : request->activeStreams()) {
+		if (bufferPool_[s].empty())
+			return -EEXIST;
+	}
+
+	for (const Stream *s : request->activeStreams()) {
+		auto &queue = bufferPool_[s];
+		request->_d()->setBuffer(s, queue.front());
+		queue.pop();
+	}
+
+	return 0;
 }
 
 /**
@@ -454,11 +472,14 @@ void PipelineHandler::doQueueRequests()
 {
 	while (!waitingRequests_.empty()) {
 		Request *request = waitingRequests_.front();
-		if (!request->_d()->prepared_)
-			break;
 
-		doQueueRequest(request);
+		int ret = tryAttachBuffersToRequest(request);
+		if (ret)
+			break;
 		waitingRequests_.pop();
+
+		Camera *camera = request->_d()->camera();
+		queueBuffersDevice(camera, request);
 	}
 }
 
@@ -478,6 +499,15 @@ void PipelineHandler::doQueueRequests()
  *
  * \return 0 on success or a negative error code otherwise
  */
+
+void PipelineHandler::queueBuffer(const Stream *stream, FrameBuffer *buffer)
+{
+	//LIBCAMERA_TRACEPOINT(request_queue, request);
+
+	//\todo fence handling
+	bufferPool_[stream].push(buffer);
+	doQueueRequests();
+}
 
 /**
  * \brief Complete a buffer for a request

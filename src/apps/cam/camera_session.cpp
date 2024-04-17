@@ -302,12 +302,7 @@ int CameraSession::startCapture()
 				allocator_->buffers(stream);
 			const std::unique_ptr<FrameBuffer> &buffer = buffers[i];
 
-			ret = request->addBuffer(stream, buffer.get());
-			if (ret < 0) {
-				std::cerr << "Can't set buffer for request"
-					  << std::endl;
-				return ret;
-			}
+			camera_->queueBuffer(stream, buffer.get());
 
 			if (sink_)
 				sink_->mapBuffer(buffer.get());
@@ -458,7 +453,10 @@ void CameraSession::processRequest(Request *request)
 	if (!requeue)
 		return;
 
-	request->reuse(Request::ReuseBuffers);
+	for (auto &[stream, buffer] : request->buffers())
+		camera_->queueBuffer(stream, buffer);
+
+	request->reuse();
 	queueRequest(request);
 }
 

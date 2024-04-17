@@ -348,6 +348,7 @@ public:
 
 protected:
 	int queueRequestDevice(Camera *camera, Request *request) override;
+	int queueBuffersDevice(Camera *camera, Request *request) override;
 
 private:
 	static constexpr unsigned int kNumInternalBuffers = 3;
@@ -1394,7 +1395,12 @@ void SimplePipelineHandler::stopDevice(Camera *camera)
 	releasePipeline(data);
 }
 
-int SimplePipelineHandler::queueRequestDevice(Camera *camera, Request *request)
+int SimplePipelineHandler::queueRequestDevice([[maybe_unused]] Camera *camera, [[maybe_unused]] Request *request)
+{
+	return 0;
+}
+
+int SimplePipelineHandler::queueBuffersDevice(Camera *camera, Request *request)
 {
 	SimpleCameraData *data = cameraData(camera);
 	int ret;

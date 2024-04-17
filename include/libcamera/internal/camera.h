@@ -33,6 +33,7 @@ public:
 
 	PipelineHandler *pipe() { return pipe_.get(); }
 
+	/* All requests queued. Not necessarily with buffers */
 	std::list<Request *> queuedRequests_;
 	ControlInfoMap controlInfo_;
 	ControlList properties_;
@@ -40,6 +41,7 @@ public:
 	uint32_t requestSequence_;
 
 	const CameraControlValidator *validator() const { return validator_.get(); }
+	const std::set<const Stream *> &activeStreams() const { return activeStreams_; }
 
 private:
 	enum State {

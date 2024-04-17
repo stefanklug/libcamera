@@ -147,6 +147,7 @@ public:
 
 	std::unique_ptr<Request> createRequest(uint64_t cookie = 0);
 	int queueRequest(Request *request);
+	int queueBuffer(const Stream *stream, FrameBuffer *buffer, std::unique_ptr<Fence> fence = nullptr);
 
 	int start(const ControlList *controls = nullptr);
 	int stop();

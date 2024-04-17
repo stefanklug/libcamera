@@ -53,9 +53,9 @@ public:
 	ControlList &controls() { return *controls_; }
 	ControlList &metadata() { return *metadata_; }
 	const BufferMap &buffers() const { return bufferMap_; }
-	int addBuffer(const Stream *stream, FrameBuffer *buffer,
-		      std::unique_ptr<Fence> fence = nullptr);
 	FrameBuffer *findBuffer(const Stream *stream) const;
+	const std::set<const Stream *> activeStreams() const { return activeStreams_; }
+	int enableStream(const Stream *stream, bool enabled = true);
 
 	uint32_t sequence() const;
 	uint64_t cookie() const { return cookie_; }
@@ -71,6 +71,7 @@ private:
 	ControlList *controls_;
 	ControlList *metadata_;
 	BufferMap bufferMap_;
+	std::set<const Stream *> activeStreams_;
 
 	const uint64_t cookie_;
 	Status status_;

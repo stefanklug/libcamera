@@ -53,7 +53,7 @@ private:
 
 		/* Reuse the request and re-queue it with the same buffers. */
 		request->reuse();
-		request->addBuffer(stream, buffer);
+		camera_->queueBuffer(stream, buffer);
 		camera_->queueRequest(request);
 	}
 
@@ -87,14 +87,14 @@ private:
 		}
 
 		for (const unique_ptr<FrameBuffer> &buffer : allocator_->buffers(stream)) {
-			unique_ptr<Request> request = camera_->createRequest();
-			if (!request) {
-				cerr << "Failed to create request" << endl;
+			if (camera_->queueBuffer(stream, buffer.get())) {
+				cerr << "Failed to queue buffer" << endl;
 				return TestFail;
 			}
 
-			if (request->addBuffer(stream, buffer.get())) {
-				cerr << "Failed to associate buffer with request" << endl;
+			unique_ptr<Request> request = camera_->createRequest();
+			if (!request) {
+				cerr << "Failed to create request" << endl;
 				return TestFail;
 			}
 

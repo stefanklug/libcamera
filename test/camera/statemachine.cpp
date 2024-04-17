@@ -150,7 +150,7 @@ protected:
 			return TestFail;
 
 		Stream *stream = *camera_->streams().begin();
-		if (request->addBuffer(stream, allocator_->buffers(stream)[0].get()))
+		if (camera_->queueBuffer(stream, allocator_->buffers(stream)[0].get()))
 			return TestFail;
 
 		if (camera_->queueRequest(request.get()))

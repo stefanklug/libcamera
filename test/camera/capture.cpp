@@ -57,7 +57,7 @@ protected:
 		FrameBuffer *buffer = buffers.begin()->second;
 
 		request->reuse();
-		request->addBuffer(stream, buffer);
+		camera_->queueBuffer(stream, buffer);
 		camera_->queueRequest(request);
 	}
 
@@ -74,11 +74,17 @@ protected:
 
 		allocator_ = new FrameBufferAllocator(camera_);
 
+		camera_->bufferCompleted.connect(this, &Capture::bufferComplete);
+		camera_->requestCompleted.connect(this, &Capture::requestComplete);
+
 		return TestPass;
 	}
 
 	void cleanup() override
 	{
+		camera_->bufferCompleted.disconnect(this);
+		camera_->requestCompleted.disconnect(this);
+
 		delete allocator_;
 	}
 
@@ -109,7 +115,7 @@ protected:
 				return TestFail;
 			}
 
-			if (request->addBuffer(stream, buffer.get())) {
+			if (camera_->queueBuffer(stream, buffer.get())) {
 				cout << "Failed to associate buffer with request" << endl;
 				return TestFail;
 			}
@@ -119,9 +125,6 @@ protected:
 
 		completeRequestsCount_ = 0;
 		completeBuffersCount_ = 0;
-
-		camera_->bufferCompleted.connect(this, &Capture::bufferComplete);
-		camera_->requestCompleted.connect(this, &Capture::requestComplete);
 
 		if (camera_->start()) {
 			cout << "Failed to start camera" << endl;

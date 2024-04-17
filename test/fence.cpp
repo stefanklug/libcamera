@@ -203,10 +203,10 @@ void FenceTest::requestRequeue(Request *request)
 		 */
 		std::unique_ptr<Fence> fence =
 			std::make_unique<Fence>(std::move(eventFd2_));
-		request->addBuffer(stream, buffer, std::move(fence));
+		camera_->queueBuffer(stream, buffer, std::move(fence));
 	} else {
 		/* All the other requests continue to operate without fences. */
-		request->addBuffer(stream, buffer);
+		camera_->queueBuffer(stream, buffer);
 	}
 
 	camera_->queueRequest(request);
@@ -280,10 +280,10 @@ int FenceTest::run()
 				return TestFail;
 			}
 
-			ret = request->addBuffer(stream_, buffer.get(), std::move(fence_));
+			ret = camera_->queueBuffer(stream_, buffer.get(), std::move(fence_));
 		} else {
 			/* All other requests will have no Fence. */
-			ret = request->addBuffer(stream_, buffer.get());
+			ret = camera_->queueBuffer(stream_, buffer.get());
 		}
 
 		if (ret) {

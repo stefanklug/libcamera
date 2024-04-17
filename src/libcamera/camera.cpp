@@ -22,6 +22,7 @@
 #include "libcamera/internal/camera.h"
 #include "libcamera/internal/camera_controls.h"
 #include "libcamera/internal/formats.h"
+#include "libcamera/internal/framebuffer.h"
 #include "libcamera/internal/pipeline_handler.h"
 #include "libcamera/internal/request.h"
 
@@ -1245,6 +1246,75 @@ std::unique_ptr<Request> Camera::createRequest(uint64_t cookie)
 }
 
 /**
+ * \brief Add a FrameBuffer with its associated Stream to the Request
+ * \param[in] stream The stream the buffer belongs to
+ * \param[in] buffer The FrameBuffer to add to the request
+ * \param[in] fence The optional fence
+ *
+ * A reference to the buffer is stored in the request. The caller is responsible
+ * for ensuring that the buffer will remain valid until the request complete
+ * callback is called.
+ *
+ * A request can only contain one buffer per stream. If a buffer has already
+ * been added to the request for the same stream, this function returns -EEXIST.
+ *
+ * A Fence can be optionally associated with the \a buffer.
+ *
+ * When a valid Fence is provided to this function, \a fence is moved to \a
+ * buffer and this Request will only be queued to the device once the
+ * fences of all its buffers have been correctly signalled.
+ *
+ * If the \a fence associated with \a buffer isn't signalled, the request will
+ * fail after a timeout. The buffer will still contain the fence, which
+ * applications must retrieve with FrameBuffer::releaseFence() before the buffer
+ * can be reused in another request. Attempting to add a buffer that still
+ * contains a fence to a request will result in this function returning -EEXIST.
+ *
+ * \sa FrameBuffer::releaseFence()
+ *
+ * \return 0 on success or a negative error code otherwise
+ * \retval -EEXIST The request already contains a buffer for the stream
+ *  or the buffer still references a fence
+ * \retval -EINVAL The buffer does not reference a valid Stream
+ */
+int Camera::queueBuffer(const Stream *stream, FrameBuffer *buffer,
+			[[maybe_unused]] std::unique_ptr<Fence> fence)
+{
+	Private *const d = _d();
+
+	int ret = d->isAccessAllowed(Private::CameraConfigured, Private::CameraRunning);
+	if (ret < 0)
+		return ret;
+
+	if (!stream) {
+		LOG(Camera, Error) << "Invalid stream reference";
+		return -EINVAL;
+	}
+
+	if (buffer->request()) {
+		LOG(Camera, Error) << "Can't queue buffer that still references a request";
+		return -EEXIST;
+	}
+
+	/*
+	 * Make sure the fence has been extracted from the buffer
+	 * to avoid waiting on a stale fence.
+	 */
+	if (buffer->_d()->fence()) {
+		LOG(Camera, Error) << "Can't queue buffer that still references a fence";
+		return -EEXIST;
+	}
+
+	if (fence && fence->isValid())
+		buffer->_d()->setFence(std::move(fence));
+
+	d->pipe_->invokeMethod(&PipelineHandler::queueBuffer,
+			       ConnectionTypeQueued, stream, buffer);
+
+	return 0;
+}
+
+/**
  * \brief Queue a request to the camera
  * \param[in] request The request to queue to the camera
  *
@@ -1292,18 +1362,9 @@ int Camera::queueRequest(Request *request)
 	 * this.
 	 */
 
-	if (request->buffers().empty()) {
-		LOG(Camera, Error) << "Request contains no buffers";
+	if (!request->buffers().empty()) {
+		LOG(Camera, Error) << "Request still has buffers attached";
 		return -EINVAL;
-	}
-
-	for (auto const &it : request->buffers()) {
-		const Stream *stream = it.first;
-
-		if (d->activeStreams_.find(stream) == d->activeStreams_.end()) {
-			LOG(Camera, Error) << "Invalid request";
-			return -EINVAL;
-		}
 	}
 
 	d->pipe_->invokeMethod(&PipelineHandler::queueRequest,

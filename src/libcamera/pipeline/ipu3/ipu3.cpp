@@ -145,6 +145,7 @@ public:
 	void stopDevice(Camera *camera) override;
 
 	int queueRequestDevice(Camera *camera, Request *request) override;
+	int queueBuffersDevice(Camera *camera, Request *request) override;
 
 	bool match(DeviceEnumerator *enumerator) override;
 
@@ -832,7 +833,12 @@ void IPU3CameraData::queuePendingRequests()
 	}
 }
 
-int PipelineHandlerIPU3::queueRequestDevice(Camera *camera, Request *request)
+int PipelineHandlerIPU3::queueRequestDevice([[maybe_unused]] Camera *camera, [[maybe_unused]] Request *request)
+{
+	return 0;
+}
+
+int PipelineHandlerIPU3::queueBuffersDevice(Camera *camera, Request *request)
 {
 	IPU3CameraData *data = cameraData(camera);
 

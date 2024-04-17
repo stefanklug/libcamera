@@ -437,13 +437,15 @@ PYBIND11_MODULE(_libcamera, m)
 		});
 
 	pyRequest
-		/* \todo Fence is not supported, so we cannot expose addBuffer() directly */
-		.def("add_buffer", [](Request &self, const Stream *stream, FrameBuffer *buffer) {
+		/* \todo Fence is not supported, so we cannot expose addBuffer() directly
+		   \todo reimplement */
+		/*.def("add_buffer", [](Request &self, const Stream *stream, FrameBuffer *buffer) {
 			int ret = self.addBuffer(stream, buffer);
 			if (ret)
 				throw std::system_error(-ret, std::generic_category(),
 							"Failed to add buffer");
-		}, py::keep_alive<1, 3>()) /* Request keeps Framebuffer alive */
+		}, py::keep_alive<1, 3>())*/
+		/* Request keeps Framebuffer alive */
 		.def_property_readonly("status", &Request::status)
 		.def_property_readonly("buffers", &Request::buffers)
 		.def_property_readonly("cookie", &Request::cookie)

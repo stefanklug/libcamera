@@ -474,28 +474,22 @@ int MainWindow::startCapture()
 			assert(image != nullptr);
 			mappedBuffers_[buffer.get()] = std::move(image);
 
-			/* Store buffers on the free list. */
-			freeBuffers_[stream].enqueue(buffer.get());
+			ret = camera_->queueBuffer(stream, buffer.get());
+			if (ret < 0) {
+				qWarning() << "Failed to queue buffer";
+				goto error;
+			}
 		}
 	}
 
 	/* Create requests and fill them with buffers from the viewfinder. */
-	while (!freeBuffers_[vfStream_].isEmpty()) {
-		FrameBuffer *buffer = freeBuffers_[vfStream_].dequeue();
-
+	for (int i = 0; i < 4; i++) {
 		std::unique_ptr<Request> request = camera_->createRequest();
 		if (!request) {
 			qWarning() << "Can't create request";
 			ret = -ENOMEM;
 			goto error;
 		}
-
-		ret = request->addBuffer(vfStream_, buffer);
-		if (ret < 0) {
-			qWarning() << "Can't set buffer for request";
-			goto error;
-		}
-
 		requests_.push_back(std::move(request));
 	}
 
@@ -535,8 +529,6 @@ error:
 	requests_.clear();
 
 	mappedBuffers_.clear();
-
-	freeBuffers_.clear();
 
 	delete allocator_;
 	allocator_ = nullptr;
@@ -582,7 +574,6 @@ void MainWindow::stopCapture()
 	 * but not processed yet. Clear the queue of done buffers to avoid
 	 * racing with the event handler.
 	 */
-	freeBuffers_.clear();
 	doneQueue_.clear();
 
 	titleTimer_.stop();
@@ -669,10 +660,7 @@ void MainWindow::processRaw(FrameBuffer *buffer,
 	}
 #endif
 
-	{
-		QMutexLocker locker(&mutex_);
-		freeBuffers_[rawStream_].enqueue(buffer);
-	}
+	camera_->queueBuffer(rawStream_, buffer);
 }
 
 /* -----------------------------------------------------------------------------
@@ -721,8 +709,10 @@ void MainWindow::processCapture()
 		processRaw(request->buffers().at(rawStream_), request->metadata());
 
 	request->reuse();
-	QMutexLocker locker(&mutex_);
-	freeQueue_.enqueue(request);
+	request->enableStream(rawStream_, captureRaw_);
+
+	queueRequest(request);
+	captureRaw_ = false;
 }
 
 void MainWindow::processViewfinder(FrameBuffer *buffer)
@@ -751,34 +741,7 @@ void MainWindow::processViewfinder(FrameBuffer *buffer)
 
 void MainWindow::renderComplete(FrameBuffer *buffer)
 {
-	Request *request;
-	{
-		QMutexLocker locker(&mutex_);
-		if (freeQueue_.isEmpty())
-			return;
-
-		request = freeQueue_.dequeue();
-	}
-
-	request->addBuffer(vfStream_, buffer);
-
-	if (captureRaw_) {
-		FrameBuffer *rawBuffer = nullptr;
-
-		{
-			QMutexLocker locker(&mutex_);
-			if (!freeBuffers_[rawStream_].isEmpty())
-				rawBuffer = freeBuffers_[rawStream_].dequeue();
-		}
-
-		if (rawBuffer) {
-			request->addBuffer(rawStream_, rawBuffer);
-			captureRaw_ = false;
-		} else {
-			qWarning() << "No free buffer available for RAW capture";
-		}
-	}
-	queueRequest(request);
+	camera_->queueBuffer(vfStream_, buffer);
 }
 
 int MainWindow::queueRequest(Request *request)

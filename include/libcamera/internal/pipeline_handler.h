@@ -7,6 +7,7 @@
 
 #pragma once
 
+#include <map>
 #include <memory>
 #include <queue>
 #include <set>
@@ -33,6 +34,7 @@ class FrameBuffer;
 class MediaDevice;
 class PipelineHandler;
 class Request;
+class Stream;
 
 class PipelineHandler : public std::enable_shared_from_this<PipelineHandler>,
 			public Object
@@ -61,6 +63,7 @@ public:
 
 	void registerRequest(Request *request);
 	void queueRequest(Request *request);
+	void queueBuffer(const Stream *stream, FrameBuffer *buffer);
 
 	bool completeBuffer(Request *request, FrameBuffer *buffer);
 	void completeRequest(Request *request);
@@ -74,12 +77,17 @@ protected:
 	void registerCamera(std::shared_ptr<Camera> camera);
 	void hotplugMediaDevice(MediaDevice *media);
 
+	int tryAttachBuffersToRequest(Request *request);
+
 	virtual int queueRequestDevice(Camera *camera, Request *request) = 0;
+	virtual int queueBuffersDevice(Camera *camera, Request *request) = 0;
 	virtual void stopDevice(Camera *camera) = 0;
 
 	virtual void releaseDevice(Camera *camera);
 
 	CameraManager *manager_;
+	//\todo ownership of buffers
+	std::map<const Stream *, std::queue<FrameBuffer *>> bufferPool_;
 
 private:
 	void unlockMediaDevices();
@@ -87,12 +95,12 @@ private:
 	void mediaDeviceDisconnected(MediaDevice *media);
 	virtual void disconnect();
 
-	void doQueueRequest(Request *request);
 	void doQueueRequests();
 
 	std::vector<std::shared_ptr<MediaDevice>> mediaDevices_;
 	std::vector<std::weak_ptr<Camera>> cameras_;
 
+	/* Requests that are queued but waiting for buffers */
 	std::queue<Request *> waitingRequests_;
 
 	const char *name_;

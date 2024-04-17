@@ -34,6 +34,7 @@ public:
 	Camera *camera() const { return camera_; }
 	bool hasPendingBuffers() const;
 
+	int setBuffer(const Stream *stream, FrameBuffer *buffer);
 	bool completeBuffer(FrameBuffer *buffer);
 	void complete();
 	void cancel();
